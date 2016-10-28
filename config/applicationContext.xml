@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:aop="http://www.springframework.org/schema/aop"
+	xmlns:tx="http://www.springframework.org/schema/tx"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans 
+						http://www.springframework.org/schema/beans/spring-beans.xsd
+						http://www.springframework.org/schema/context
+						http://www.springframework.org/schema/context/spring-context.xsd
+						http://www.springframework.org/schema/aop
+						http://www.springframework.org/schema/aop/spring-aop.xsd
+						http://www.springframework.org/schema/tx 
+						http://www.springframework.org/schema/tx/spring-tx.xsd">
+	<!-- 加载jdbc属性文件 -->
+	<context:property-placeholder location="classpath:jdbc.properties"/>
+		
+	<!-- 数据源 -->
+	<bean id="dataSource" class="com.mchange.v2.c3p0.ComboPooledDataSource">
+		<property name="driverClass" value="${driverClass}"></property>
+		<property name="jdbcUrl" value="${jdbcUrl}"></property>
+		<property name="user" value="${user}"></property>
+		<property name="password" value="${password}"></property>
+	</bean>
+	
+	<!-- 配置本地会话工厂bean -->
+	<bean id="sessionFactory" class="org.springframework.orm.hibernate3.LocalSessionFactoryBean">
+		<property name="dataSource" ref="dataSource"></property>
+		<property name="hibernateProperties">
+			<props>
+				<prop key="hibernate.dialect">org.hibernate.dialect.MySQL5Dialect</prop>
+				<prop key="hibernate.hbm2ddl.auto">update</prop>
+				<prop key="hibernate.show_sql">true</prop>
+				<prop key="hibernate.format_sql">true</prop>
+			</props>
+		</property>
+		<property name="mappingDirectoryLocations">
+			<list>
+				<value>classpath:com/itheima/bos/domain</value>
+			</list>
+		</property>
+	</bean>
+	
+	<!-- 事务管理器 -->
+	<bean id="transactionManager" class="org.springframework.orm.hibernate3.HibernateTransactionManager">
+		<property name="sessionFactory" ref="sessionFactory"></property>
+	</bean>
+	
+	<!-- 组件扫描 -->
+	<context:component-scan base-package="com.itheima.bos"/>
+	
+	<!-- 支持注解 -->
+	<context:annotation-config/>
+	
+	<!-- 事务注解 -->
+	<tx:annotation-driven transaction-manager="transactionManager" proxy-target-class="false"/>
+	
+	<!-- 注册代理对象，用于远程调用crm服务 -->
+	<!-- 配置远程服务的代理对象 -->
+	<bean id="customerService" class="org.springframework.remoting.caucho.HessianProxyFactoryBean">
+		<property name="serviceInterface" value="com.itheima.bos.crm.CustomerService"/>
+		<property name="serviceUrl" value="http://localhost:8080/crm/remoting/customer"/>
+	</bean>
+	
+	<!-- 配置shiro的过滤器对象,当前对象用于创建shiro框架需要的过滤器对象 -->
+	<bean id="shiroFilter" class="org.apache.shiro.spring.web.ShiroFilterFactoryBean">
+		<!-- 注入安全管理器 -->
+		<property name="securityManager" ref="securityManager"/>
+		<!-- 注入系统的登录访问路径 -->
+		<property name="loginUrl" value="/login.jsp"/>
+		<!-- 成功页面 -->
+		<property name="successUrl" value="/index.jsp"/>
+		<!-- 权限不足提示页面 -->
+		<property name="unauthorizedUrl" value="/unauthorizedUrl.jsp"/>
+		<!-- 基于URL拦截权限控制 -->
+		<property name="filterChainDefinitions">
+			<value>
+				/css/** = anon
+				/js/** = anon
+				/images/** = anon
+				/validatecode.jsp* = anon
+				/login.jsp* = anon
+				/userAction_login.action = anon
+				/page_base_staff.action = perms["staff"]
+				/* = authc
+			</value>
+		</property>
+	</bean>
+	
+	<!-- 定义安全管理器 -->
+	<bean id="securityManager" class="org.apache.shiro.web.mgt.DefaultWebSecurityManager">
+		<!-- 注入realm -->
+		<property name="realm" ref="bosRealm"></property>
+		<!-- 注入缓存管理器 -->
+		<property name="cacheManager" ref="cacheManager"></property>
+	</bean>
+	
+	<!-- 注册一个缓存管理器 -->
+	<bean id="cacheManager" class="org.apache.shiro.cache.ehcache.EhCacheManager">
+		<property name="cacheManagerConfigFile" value="classpath:ehcache.xml"></property>
+	</bean>
+	
+	<!-- 自定义Realm -->
+	<bean id="bosRealm" class="com.itheima.bos.shiro.BOSRealm"></bean>
+	
+	<!-- 开启shiro注解自动代理 -->
+	<bean id="defaultAdvisorAutoProxyCreator" 
+		class="org.springframework.aop.framework.autoproxy.DefaultAdvisorAutoProxyCreator">
+		<!-- 指定强制使用cglib为Action创建代理对象 -->
+		<property name="proxyTargetClass" value="true"/>
+	</bean>
+	
+	<!-- 切面 -->
+	<bean class="org.apache.shiro.spring.security.interceptor.AuthorizationAttributeSourceAdvisor"></bean>
+	
+	<!-- 配置流程引擎配置对象 -->
+	<bean id="processEngineConfiguration" class="org.activiti.spring.SpringProcessEngineConfiguration">
+		<!-- 注入数据源 -->
+		<property name="dataSource" ref="dataSource"></property>
+		<!-- 注入事务管理器 -->
+		<property name="transactionManager" ref="transactionManager"></property>
+		<!-- 注入自动建表设置 -->
+		<property name="databaseSchemaUpdate" value="true"></property>
+	</bean>
+
+	<!-- 提供工厂bean，创建流程引擎对象 -->
+	<bean id="processEngine" class="org.activiti.spring.ProcessEngineFactoryBean">
+		<property name="processEngineConfiguration" ref="processEngineConfiguration"></property>
+	</bean>
+	
+	<!-- 配置Service -->
+	<bean id="repService" factory-bean="processEngine" factory-method="getRepositoryService"></bean>
+</beans>
